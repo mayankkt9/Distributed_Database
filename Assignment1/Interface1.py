@@ -1,34 +1,36 @@
 import psycopg2
 
+
 def getOpenConnection(user='postgres', password='1234', dbname='postgres'):
     return psycopg2.connect("dbname='" + dbname + "' user='" + user + "' host='localhost' password='" + password + "'")
 
-
 def loadRatings(ratingstablename, ratingsfilepath, openconnection):
+    create_command = "create table " + ratingstablename + " (userid int, temp1 char, movieid int, temp2 char, rating float, temp3 char, timestamp bigint)"
+    delete_command = "alter table " + ratingstablename + " drop temp1, drop temp2, drop temp3, drop timestamp"
+    delete_rating = "drop table if exists "+ratingstablename
     cursor = openconnection.cursor()
-    create_rating_table_command = 'create table if not exists '+ ratingstablename + ' (userid int, movieid int, rating float)'
-    cursor.execute(create_rating_table_command)
-    file = open(ratingsfilepath,'r')
-    for line in file.readlines():
-        get_data = line.split('::')
-        cursor.execute('insert into '+ ratingstablename + '(userid, movieid, rating) values ( '+get_data[0]+', '+get_data[1]+', '+get_data[2]+' )')
-        print('insert into '+ ratingstablename + '(userid, movieid, rating) values ( '+get_data[0]+' '+get_data[1]+' '+get_data[2]+' )')
-
+    cursor.execute(delete_rating)
+    cursor.execute(create_command)
+    filepointer = open(ratingsfilepath,'r')
+    cursor.copy_from(filepointer, ratingstablename, ':')
+    cursor.execute(delete_command)
     openconnection.commit()
     cursor.close()
     pass
 
 def rangePartition(ratingstablename, numberofpartitions, openconnection):
-    cursor = openconnection.cursor()
     max_rating = 5
-    rating_range = 5/numberofpartitions
-    for i in range(0,numberofpartitions):
-        start = i * rating_range
-        end = start + rating_range
-        if i==0:
-            cursor.execute('create table range_part'+str(i)+' as select * from '+ratingstablename+' where rating>=0 and rating<='+str(end))
+    rating_range = max_rating/numberofpartitions
+    cursor = openconnection.cursor()
+    for partition_id in range(0, numberofpartitions):
+        rating_from = partition_id * rating_range
+        rating_to = rating_from + rating_range
+        if 0 == partition_id:
+            cursor.execute('create table range_part'+str(partition_id)+' as select * from ' +
+                           ratingstablename+' where rating>=0 and rating<='+str(rating_to))
         else:
-            cursor.execute('create table range_part'+str(i)+' as select * from '+ratingstablename+' where rating>'+str(start)+' and rating<='+str(end))
+            cursor.execute('create table range_part'+str(partition_id)+' as select * from ' +
+                           ratingstablename+' where rating>'+str(rating_from)+' and rating<='+str(rating_to))
     openconnection.commit()
     cursor.close()
     pass
@@ -36,8 +38,10 @@ def rangePartition(ratingstablename, numberofpartitions, openconnection):
 
 def roundRobinPartition(ratingstablename, numberofpartitions, openconnection):
     cursor = openconnection.cursor()
-    for i in range(0,numberofpartitions):
-        command = 'create table rrobin_part'+str(i)+' as select * from (select ROW_NUMBER() OVER() as row_number, *  from '+ratingstablename+') as V where mod(V.row_number,'+str(numberofpartitions)+') = '+(str((i+1)%numberofpartitions))
+    for i in range(0, numberofpartitions):
+        command = 'create table rrobin_part'+str(i)+' as select * from (select row_number() over() as row_number, *  from ' + \
+            ratingstablename+') as View where mod(View.row_number,'+str(
+                numberofpartitions)+') = '+(str((i+1) % numberofpartitions))
         cursor.execute(command)
     openconnection.commit()
     cursor.close()
@@ -45,35 +49,43 @@ def roundRobinPartition(ratingstablename, numberofpartitions, openconnection):
 
 
 def roundRobinInsert(ratingstablename, userid, itemid, rating, openconnection):
-    cursor = openconnection.cursor()
-    cursor.execute('insert into '+ ratingstablename + '(userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )')
-    cursor.execute('select count(*) from '+ratingstablename)
-    row_number = (cursor.fetchall())[0][0]
+    command_rating_insert = 'insert into ' + ratingstablename + '(userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )'
+    command_count = 'select count(*) from '+ratingstablename
     rrobin_part = 'rrobin_part%'
-    cursor.execute("select count(*) from pg_stat_user_tables where relname like '"+rrobin_part+"'")
+    command_get_all_table = "select count(*) from pg_stat_user_tables where relname like '"+rrobin_part+"'"
+    cursor = openconnection.cursor()
+    cursor.execute(command_rating_insert)
+    cursor.execute(command_count)
+    row_number = (cursor.fetchall())[0][0]
+    cursor.execute(command_get_all_table)
     numberofpartitions = cursor.fetchone()[0]
-    partition_id = (row_number-1)%numberofpartitions
-    cursor.execute('insert into rrobin_part'+str(partition_id) + '(userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )')
+    partition_id = (row_number-1) % numberofpartitions
+    command = 'insert into rrobin_part'+str(partition_id) + ' (userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )'
+    cursor.execute(command)
     openconnection.commit()
     cursor.close()
     pass
 
 
 def rangeInsert(ratingstablename, userid, itemid, rating, openconnection):
-    cursor = openconnection.cursor()
     max_rating = 5
-    range_part = 'range_part%'
-    cursor.execute("select count(*) from pg_stat_user_tables where relname like '"+range_part+"'")
+    range_part_prefix = 'range_part%'
+    command_rating_insert = 'insert into ' + ratingstablename + '(userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )'
+    command_get_range_table_count = "select count(*) from pg_tables where schemaname = 'public' and tablename like '"+range_part_prefix+"'"
+    cursor = openconnection.cursor()
+    cursor.execute(command_rating_insert)
+    cursor.execute(command_get_range_table_count)
     numberofpartitions = cursor.fetchone()[0]
-    rating_range = 5/numberofpartitions
+    rating_range = max_rating/numberofpartitions
     partition_id = (int)(rating/rating_range)
-    if partition_id!=0 and rating%rating_range==0:
+    if 0 != partition_id and 0 == (rating % rating_range):
         partition_id = partition_id - 1
-    cursor.execute('insert into range_part'+str(partition_id) + '(userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )')
+    command_range_insert = 'insert into range_part'+str(partition_id) + '(userid, movieid, rating) values ( '+str(userid)+', '+str(itemid)+', '+str(rating)+' )'
+    cursor.execute(command_range_insert)
     openconnection.commit()
     cursor.close()
-
     pass
+
 
 def createDB(dbname='dds_assignment1'):
     """
@@ -87,7 +99,8 @@ def createDB(dbname='dds_assignment1'):
     cur = con.cursor()
 
     # Check if an existing database with the same name exists
-    cur.execute('SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname=\'%s\'' % (dbname,))
+    cur.execute(
+        'SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname=\'%s\'' % (dbname,))
     count = cur.fetchone()[0]
     if count == 0:
         cur.execute('CREATE DATABASE %s' % (dbname,))  # Create the database
@@ -98,11 +111,13 @@ def createDB(dbname='dds_assignment1'):
     cur.close()
     con.close()
 
+
 def deleteTables(ratingstablename, openconnection):
     try:
         cursor = openconnection.cursor()
         if ratingstablename.upper() == 'ALL':
-            cursor.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
+            cursor.execute(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")
             tables = cursor.fetchall()
             for table_name in tables:
                 cursor.execute('DROP TABLE %s CASCADE' % (table_name[0]))
