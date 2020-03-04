@@ -13,11 +13,11 @@ def ParallelSort (InputTable, SortingColumnName, OutputTable, openconnection):
     
     cursor = openconnection.cursor()
     total_threads = 5
-    thread_id = [0] * total_threads
+    thread_id = []
     temp_table = 'temp_table'
     command_min_max = "select min("+SortingColumnName+"), max("+SortingColumnName+") from "+InputTable
     command_drop_output = 'drop table if exists '+OutputTable
-    command_create_output = 'create table '+OutputTable+' as select * from ratings where true=false'
+    command_create_output = 'create table '+OutputTable+' as select * from '+ InputTable +' where true=false'
     cursor.execute(command_min_max)
     get_rating = cursor.fetchone()
     min_rating = get_rating[0]
@@ -27,8 +27,9 @@ def ParallelSort (InputTable, SortingColumnName, OutputTable, openconnection):
     for i in range(total_threads):
         rating_from = min_rating + i * rating_range
         rating_to = rating_from + rating_range
-        thread_id[i] = threading.Thread(target=range_partition, args=(i, InputTable, SortingColumnName, rating_from, rating_to, temp_table, openconnection))
-        thread_id[i].start()
+        t = threading.Thread(target=range_partition, args=(i, InputTable, SortingColumnName, rating_from, rating_to, temp_table, openconnection))
+        thread_id.append(t)
+        t.start()
 
     cursor.execute(command_drop_output)
     cursor.execute(command_create_output)
@@ -45,7 +46,6 @@ def ParallelSort (InputTable, SortingColumnName, OutputTable, openconnection):
 
 def range_partition(i, InputTable, SortingColumnName, rating_from, rating_to, temp_table, openconnection):
     cursor = openconnection.cursor()
-    print(i)
     table_name = temp_table + str(i)
     command_drop_table = 'drop table if exists '+table_name
     if 0==i:
@@ -58,7 +58,108 @@ def range_partition(i, InputTable, SortingColumnName, rating_from, rating_to, te
 
 def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, OutputTable, openconnection):
     #Implement ParallelJoin Here.
-    pass # Remove this once you are done with implementation
+    cursor = openconnection.cursor()
+    total_threads = 5
+    thread_id = []
+    temp_table_1 = "temp1_table"
+    temp_table_2 = "temp2_table"
+    temp_table_3 = "temp3_table"
+    command_metadata_table_1 = "select column_name,data_type from information_schema.columns where table_name = '"+InputTable1+"'"
+    command_metadata_table_2 = "select column_name,data_type from information_schema.columns where table_name = '"+InputTable2+"'"
+    command_drop_output = 'drop table if exists '+OutputTable
+    command_create_output = 'create table '+OutputTable+' as select * from '+ InputTable1 +' where true=false'
+
+    min_rating,max_rating = get_min_max(InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, openconnection)
+    rating_range = (max_rating-min_rating)/total_threads
+    cursor.execute(command_metadata_table_1)
+    table_1_metadata = cursor.fetchall()
+    cursor.execute(command_metadata_table_2)
+    table_2_metadata = cursor.fetchall()
+
+    for i in range(total_threads):
+        rating_from = min_rating + i * rating_range
+        rating_to = rating_from + rating_range
+        t = threading.Thread(target=range_partition_join, args=(i, InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, table_1_metadata, table_2_metadata, rating_from, rating_to, temp_table_1, temp_table_2, temp_table_3, openconnection))
+        thread_id.append(t)
+        t.start()
+        # range_partition_join(i, InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, table_1_metadata, table_2_metadata, rating_from, rating_to, temp_table_1, temp_table_2, temp_table_3, openconnection)
+
+    cursor.execute(command_drop_output)
+    cursor.execute(command_create_output)
+    generate_query = gen_query(OutputTable,table_2_metadata)
+    cursor.execute(generate_query)
+    for i in range(total_threads):
+        thread_id[i].join()
+        table_name_3 = temp_table_3 + str(i)
+        command_insert = 'insert into '+OutputTable+' select * from '+table_name_3
+        command_drop_table = 'drop table if exists '+table_name_3
+        cursor.execute(command_insert)
+        cursor.execute(command_drop_table)
+
+    openconnection.commit()
+
+
+def range_partition_join(i, InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, table_1_metadata, table_2_metadata, rating_from, rating_to, temp_table_1, temp_table_2, temp_table_3, openconnection):
+    cursor = openconnection.cursor()
+    table_name_1 = temp_table_1 + str(i)
+    table_name_2 = temp_table_2 + str(i)
+    table_name_3 = temp_table_3 + str(i)
+    command_drop_table_1 = 'drop table if exists '+table_name_1
+    command_drop_table_2 = 'drop table if exists '+table_name_2
+    command_drop_table_3 = 'drop table if exists '+table_name_3
+    command_create_table_1 = 'create table '+table_name_1+' as select * from '+ InputTable1 +' where true=false'
+    command_create_table_2 = 'create table '+table_name_2+' as select * from '+ InputTable2 +' where true=false'
+    command_create_table_3 = 'create table '+table_name_3+' as select * from '+ InputTable1 +' where true=false'
+    cursor.execute(command_drop_table_1)
+    cursor.execute(command_drop_table_2)
+    cursor.execute(command_drop_table_3)
+    x1=cursor.execute(command_create_table_1)
+    x2=cursor.execute(command_create_table_2)
+    x3=cursor.execute(command_create_table_3)
+    generate_query = gen_query(table_name_3,table_2_metadata)
+    cursor.execute(generate_query)
+
+    if 0==i:
+        cursor.execute('insert into '+table_name_1+' select * from '+ InputTable1 + ' where '+Table1JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table1JoinColumn+ ' >= '+str(rating_from))
+        cursor.execute('insert into '+table_name_2+' select * from '+ InputTable2 + ' where '+Table2JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table2JoinColumn+ ' >= '+str(rating_from))
+    else:
+        cursor.execute('insert into '+table_name_1+' select * from '+ InputTable1 + ' where '+Table1JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table1JoinColumn+ ' > '+str(rating_from))
+        cursor.execute('insert into '+table_name_2+' select * from '+ InputTable2 + ' where '+Table2JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table2JoinColumn+ ' > '+str(rating_from))
+    command = 'insert into '+table_name_3+ ' select * from '+table_name_1 + ' inner join '+table_name_2+' on '+ table_name_1+ '.'+Table1JoinColumn+'='+table_name_2+"."+Table2JoinColumn
+    cursor.execute(command)
+    cursor.execute(command_drop_table_1)
+    cursor.execute(command_drop_table_2)
+
+
+def gen_query(OutputTable,table_2_metadata):
+    generate_query = 'alter table '+OutputTable+ ' '
+    for i in range(len(table_2_metadata)):
+        if i < (len(table_2_metadata)-1):
+            generate_query += ' add column '+ table_2_metadata[i][0] + ' ' + table_2_metadata[i][1] + ','
+        else:
+            generate_query += ' add column '+ table_2_metadata[i][0] + ' ' + table_2_metadata[i][1]
+    return generate_query
+
+
+def get_min_max (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, openconnection):
+    cursor = openconnection.cursor()
+    command_min_max_table_1 = "select min("+Table1JoinColumn+"), max("+Table1JoinColumn+") from "+InputTable1
+    command_min_max_table_2 = "select min("+Table2JoinColumn+"), max("+Table2JoinColumn+") from "+InputTable2
+
+    cursor.execute(command_min_max_table_1)
+    get_rating_1 = cursor.fetchone()
+    min_rating_1 = get_rating_1[0]
+    max_rating_1 = get_rating_1[1]
+
+    cursor.execute(command_min_max_table_2)
+    get_rating_2 = cursor.fetchone()
+    min_rating_2 = get_rating_2[0]
+    max_rating_2 = get_rating_2[1]
+
+    min_rating = min(min_rating_1,min_rating_2)
+    max_rating = max(max_rating_1,max_rating_2)
+
+    return (min_rating,max_rating)
 
 
 ################### DO NOT CHANGE ANYTHING BELOW THIS #############################
