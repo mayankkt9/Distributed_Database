@@ -82,7 +82,6 @@ def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, 
         t = threading.Thread(target=range_partition_join, args=(i, InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, table_1_metadata, table_2_metadata, rating_from, rating_to, temp_table_1, temp_table_2, temp_table_3, openconnection))
         thread_id.append(t)
         t.start()
-        # range_partition_join(i, InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, table_1_metadata, table_2_metadata, rating_from, rating_to, temp_table_1, temp_table_2, temp_table_3, openconnection)
 
     cursor.execute(command_drop_output)
     cursor.execute(command_create_output)
@@ -100,33 +99,39 @@ def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, 
 
 
 def range_partition_join(i, InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, table_1_metadata, table_2_metadata, rating_from, rating_to, temp_table_1, temp_table_2, temp_table_3, openconnection):
+    
     cursor = openconnection.cursor()
     table_name_1 = temp_table_1 + str(i)
     table_name_2 = temp_table_2 + str(i)
     table_name_3 = temp_table_3 + str(i)
+    
     command_drop_table_1 = 'drop table if exists '+table_name_1
     command_drop_table_2 = 'drop table if exists '+table_name_2
     command_drop_table_3 = 'drop table if exists '+table_name_3
     command_create_table_1 = 'create table '+table_name_1+' as select * from '+ InputTable1 +' where true=false'
     command_create_table_2 = 'create table '+table_name_2+' as select * from '+ InputTable2 +' where true=false'
     command_create_table_3 = 'create table '+table_name_3+' as select * from '+ InputTable1 +' where true=false'
+    command_insert_table_1_i0 = 'insert into '+table_name_1+' select * from '+ InputTable1 + ' where '+Table1JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table1JoinColumn+ ' >= '+str(rating_from)
+    command_insert_table_2_i0 = 'insert into '+table_name_2+' select * from '+ InputTable2 + ' where '+Table2JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table2JoinColumn+ ' >= '+str(rating_from)
+    command_insert_table_1 = 'insert into '+table_name_1+' select * from '+ InputTable1 + ' where '+Table1JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table1JoinColumn+ ' > '+str(rating_from)
+    command_insert_table_2 = 'insert into '+table_name_2+' select * from '+ InputTable2 + ' where '+Table2JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table2JoinColumn+ ' > '+str(rating_from)
+    command_join = 'insert into '+table_name_3+ ' select * from '+table_name_1 + ' inner join '+table_name_2+' on '+ table_name_1+ '.'+Table1JoinColumn+'='+table_name_2+'.'+Table2JoinColumn
+    
     cursor.execute(command_drop_table_1)
     cursor.execute(command_drop_table_2)
     cursor.execute(command_drop_table_3)
-    x1=cursor.execute(command_create_table_1)
-    x2=cursor.execute(command_create_table_2)
-    x3=cursor.execute(command_create_table_3)
-    generate_query = gen_query(table_name_3,table_2_metadata)
-    cursor.execute(generate_query)
+    cursor.execute(command_create_table_1)
+    cursor.execute(command_create_table_2)
+    cursor.execute(command_create_table_3)
+    cursor.execute(gen_query(table_name_3,table_2_metadata))
 
     if 0==i:
-        cursor.execute('insert into '+table_name_1+' select * from '+ InputTable1 + ' where '+Table1JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table1JoinColumn+ ' >= '+str(rating_from))
-        cursor.execute('insert into '+table_name_2+' select * from '+ InputTable2 + ' where '+Table2JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table2JoinColumn+ ' >= '+str(rating_from))
+        cursor.execute(command_insert_table_1_i0)
+        cursor.execute(command_insert_table_2_i0)
     else:
-        cursor.execute('insert into '+table_name_1+' select * from '+ InputTable1 + ' where '+Table1JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table1JoinColumn+ ' > '+str(rating_from))
-        cursor.execute('insert into '+table_name_2+' select * from '+ InputTable2 + ' where '+Table2JoinColumn+' <= ' + str(rating_to)+ ' and ' +Table2JoinColumn+ ' > '+str(rating_from))
-    command = 'insert into '+table_name_3+ ' select * from '+table_name_1 + ' inner join '+table_name_2+' on '+ table_name_1+ '.'+Table1JoinColumn+'='+table_name_2+"."+Table2JoinColumn
-    cursor.execute(command)
+        cursor.execute(command_insert_table_1)
+        cursor.execute(command_insert_table_2)
+    cursor.execute(command_join)
     cursor.execute(command_drop_table_1)
     cursor.execute(command_drop_table_2)
 
