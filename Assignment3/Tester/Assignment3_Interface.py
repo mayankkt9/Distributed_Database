@@ -64,6 +64,10 @@ def ParallelJoin (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, 
     temp_table_1 = "temp1_table"
     temp_table_2 = "temp2_table"
     temp_table_3 = "temp3_table"
+    command_alter = "alter table "+InputTable1+" rename column "+Table1JoinColumn+" to "+Table1JoinColumn+"8420355245"
+    Table1JoinColumn=Table1JoinColumn+"8420355245"
+    #print(Table1JoinColumn)
+    cursor.execute(command_alter)
     command_metadata_table_1 = "select column_name,data_type from information_schema.columns where table_name = '"+InputTable1+"'"
     command_metadata_table_2 = "select column_name,data_type from information_schema.columns where table_name = '"+InputTable2+"'"
     command_drop_output = 'drop table if exists '+OutputTable
@@ -148,9 +152,11 @@ def gen_query(OutputTable,table_2_metadata):
 
 def get_min_max (InputTable1, InputTable2, Table1JoinColumn, Table2JoinColumn, openconnection):
     cursor = openconnection.cursor()
+    #print('hello')
+    #print(Table1JoinColumn)
     command_min_max_table_1 = "select min("+Table1JoinColumn+"), max("+Table1JoinColumn+") from "+InputTable1
     command_min_max_table_2 = "select min("+Table2JoinColumn+"), max("+Table2JoinColumn+") from "+InputTable2
-
+    #print(command_min_max_table_1)
     cursor.execute(command_min_max_table_1)
     get_rating_1 = cursor.fetchone()
     min_rating_1 = get_rating_1[0]
