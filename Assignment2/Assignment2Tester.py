@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
         # Loading Ratings table
         print("Creating and Loading the ratings table")
-        Assignment1.loadRatings('ratings', 'test_data.dat', con)
+        Assignment1.loadRatings('ratings', 'data1/ratings.dat', con)
 
         # Doing Range Partition
         print("Doing the Range Partitions")
@@ -42,15 +42,15 @@ if __name__ == '__main__':
 
         # Deleting Ratings Table because Point Query and Range Query should not use ratings table instead they should use partitions.
         Assignment1.deleteTables('ratings', con)
-        # choice = input("Wait !!!!!!")
+        choice = input("Wait !!!!!!")
         # Calling RangeQuery
         print("Performing Range Query")
-        Assignment2.RangeQuery(1.5, 3.5, con, "./rangeResult.txt")
+        Assignment2.RangeQuery(0, 5, con, "./rangeResult.txt")
         #Assignment2.RangeQuery(1,4,con, "./rangeResult.txt")
 
         # Calling PointQuery
         print("Performing Point Query")
-        Assignment2.PointQuery(4.5, con, "./pointResult.txt")
+        Assignment2.PointQuery(5, con, "./pointResult.txt")
         #Assignment2.PointQuery('2,con, "./pointResult.txt")
         
         # Deleting All Tables
