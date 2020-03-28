@@ -1,4 +1,3 @@
-package map_reduce;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -25,7 +24,7 @@ public class equijoin {
 		job.setReducerClass(Reducing.class);
 //		job.setMapOutputKeyClass(Text.class);
 //		job.setMapOutputValueClass(Text.class);
-		job.setOutputKeyClass(Text.class);
+		job.setOutputKeyClass(LongWritable.class);
 		job.setOutputValueClass(Text.class);
 		FileInputFormat.addInputPath(job, new Path(args[0]));
 		FileOutputFormat.setOutputPath(job, new Path(args[1]));
@@ -36,30 +35,42 @@ public class equijoin {
 
 		@Override
 		public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
-			System.out.println("In Map 8420355245");
+			System.out.println("In Map 84203552451");
 			Long joinKey = Long.parseLong(value.toString().replaceAll("\\s", "").split(",")[1]);
 			context.write(new LongWritable(joinKey), value);
-			System.out.println("In Map Success 8420355245");
+			System.out.println(joinKey+" "+value.toString());
+			System.out.println("In Map Success 84203552451");
 
-			
 		}
 
 	}
 
-	public static class Reducing extends Reducer<Text, Text, Text, Text> {
+	public static class Reducing extends Reducer<LongWritable, Text, LongWritable, Text> {
 
 		protected void reduce(LongWritable key, Iterable<Text> values, Context context)
 				throws IOException, InterruptedException {
-			System.out.println("In Reduce 8420355245");
-			
-			List<String> mapOutput = new ArrayList<>();
-			for(Text val : values) {
+			System.out.println("In Reduce 84203552451");
+
+			List<String> mapOutput = new ArrayList<String>();
+			for (Text val : values) {
 				mapOutput.add(val.toString());
 			}
-			
+
 			System.out.println(mapOutput);
-			
-			System.out.println("In Reduce Success 8420355245");
+
+			Text output = new Text();
+			for (int i = 0; i < mapOutput.size() - 1; i++) {
+				for (int j = i + 1; j < mapOutput.size(); j++) {
+					String table1 = mapOutput.get(i).split(",")[0];
+					String table2 = mapOutput.get(j).split(",")[0];
+					if (!table1.equals(table2)) {
+						output.set(mapOutput.get(i) + "," + mapOutput.get(j));
+						context.write(null, new Text(output));
+					}
+				}
+			}
+
+			System.out.println("In Reduce Success 84203552451");
 		}
 	}
 
