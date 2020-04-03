@@ -37,7 +37,7 @@ sudo lsof -i tcp:50070
 
 
 hadoopdir/bin/hadoop fs -mkdir -p /user/mayankkataruka/datadir
-hadoop fs -put datadir/input/sample.txt /user/mayankkataruka/datadir/
+hadoopdir/bin/hadoop fs -put datadir/input/sample.txt /user/mayankkataruka/datadir/
 
 
 
